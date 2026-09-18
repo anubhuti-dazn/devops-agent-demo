@@ -23,7 +23,10 @@ class MonitoringStack(Stack):
         log_group_name = f"/devops-agent-demo/{app_env}"
         github_repo = self.node.try_get_context("githubRepo") or "anubhuti-dazn/devops-agent-demo"
         github_token_secret = self.node.try_get_context("githubTokenSecret") or ""
-        bedrock_model_id = self.node.try_get_context("bedrockModelId") or "anthropic.claude-sonnet-4-5"
+        coralogix_endpoint = self.node.try_get_context("coralogixEndpoint") or ""
+        coralogix_api_key_secret = self.node.try_get_context("coralogixApiKeySecret") or ""
+        agent_space_id = self.node.try_get_context("agentSpaceId") or ""
+        application_name = self.node.try_get_context("applicationName") or "devops-agent-demo"
 
         # ── 1. App log group ──────────────────────────────────────────────────
         app_log_group = logs.LogGroup(
@@ -131,14 +134,20 @@ class MonitoringStack(Stack):
             )
         )
 
-        # Call Amazon Bedrock (Claude) to generate the diagnosis
+        # Call the AWS DevOps Agent service
         lambda_role.add_to_policy(
             iam.PolicyStatement(
-                actions=["bedrock:InvokeModel"],
-                resources=[
-                    f"arn:aws:bedrock:{self.region}::foundation-model/{bedrock_model_id}"
+                actions=[
+                    "devops-agent:CreateChat",
+                    "devops-agent:SendMessage",
                 ],
+                resources=["*"],
             )
+        )
+
+        # Managed policies required by the DevOps Agent SDK (matching rca-analyser pattern)
+        lambda_role.add_managed_policy(
+            iam.ManagedPolicy.from_aws_managed_policy_name("AIDevOpsAgentAccessPolicy")
         )
 
         # ── 7. Lambda function ────────────────────────────────────────────────
@@ -152,16 +161,24 @@ class MonitoringStack(Stack):
                 os.path.join(os.path.dirname(__file__), "..", "lambda", "trigger_devops_agent")
             ),
             role=lambda_role,
-            timeout=Duration.seconds(60),
+            timeout=Duration.seconds(120),
             memory_size=256,
             environment={
+                # DevOps Agent
+                "AGENT_SPACE_ID": agent_space_id,
+                "APPLICATION_NAME": application_name,
+                # Log sources
                 "APP_LOG_GROUP": log_group_name,
                 "CI_LOG_GROUP": "/devops-agent-demo/ci",
-                "BEDROCK_MODEL_ID": bedrock_model_id,
-                "BEDROCK_REGION": self.region,
+                "QUERY_WINDOW_HOURS": "1",
+                # Coralogix (optional — falls back to CloudWatch if empty)
+                "CORALOGIX_ENDPOINT": coralogix_endpoint,
+                "CORALOGIX_API_KEY_SECRET_NAME": coralogix_api_key_secret,
+                # GitHub issue reporting
                 "GITHUB_REPO": github_repo,
                 "GITHUB_TOKEN_SECRET_NAME": github_token_secret,
             },
+            timeout=Duration.seconds(120),
         )
 
         # Allow Lambda to read GitHub token from Secrets Manager (optional)
