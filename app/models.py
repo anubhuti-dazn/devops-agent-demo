@@ -15,7 +15,7 @@ class TaskCreate(BaseModel):
     status: TaskStatus = TaskStatus.pending
 
 
-class TaskUpdate(BaseModel):
+class TaskUpdate(BaseModel
     title: Optional[str] = Field(None, min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=1000)
     status: Optional[TaskStatus] = None
