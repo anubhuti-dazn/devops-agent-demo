@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
@@ -6,6 +7,7 @@ from app.models import TaskCreate, TaskUpdate, TaskResponse
 from app.config import MAX_TASKS_PER_USER
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/", response_model=List[TaskResponse])
@@ -17,6 +19,7 @@ def list_tasks(skip: int = 0, limit: int = 20, db: Session = Depends(get_db)):
 def create_task(task: TaskCreate, db: Session = Depends(get_db)):
     count = db.query(TaskDB).count()
     if count >= MAX_TASKS_PER_USER:
+        logger.warning("task_limit_reached", extra={"extra": {"limit": MAX_TASKS_PER_USER}})
         raise HTTPException(
             status_code=429,
             detail=f"Task limit of {MAX_TASKS_PER_USER} reached",
@@ -29,6 +32,7 @@ def create_task(task: TaskCreate, db: Session = Depends(get_db)):
     db.add(db_task)
     db.commit()
     db.refresh(db_task)
+    logger.info("task_created", extra={"extra": {"task_id": db_task.id, "title": db_task.title}})
     return db_task
 
 
@@ -36,6 +40,7 @@ def create_task(task: TaskCreate, db: Session = Depends(get_db)):
 def get_task(task_id: int, db: Session = Depends(get_db)):
     task = db.query(TaskDB).filter(TaskDB.id == task_id).first()
     if not task:
+        logger.warning("task_not_found", extra={"extra": {"task_id": task_id}})
         raise HTTPException(status_code=404, detail="Task not found")
     return task
 
